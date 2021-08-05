@@ -137,6 +137,7 @@ static uint32_t now;
 static uint32_t signal_end;
 int8_t led_tick_step = 1;
 volatile bool led_tick_on = false;
+volatile bool led_enable = true;
 static uint8_t limit = 200;
 
 void led_tick() {
@@ -144,7 +145,9 @@ void led_tick() {
     now++;
     if (signal_end) {
         if (now == signal_end - 1000) {
-            LED_MSC_ON();
+            if(led_enable) {
+                LED_MSC_ON();
+            }
         }
         if (now == signal_end) {
             signal_end = 0;
@@ -152,15 +155,24 @@ void led_tick() {
     } else {
         uint8_t curr = now & 0xff;
         if (curr == 0) {
-            LED_MSC_ON();
+            if(led_enable) {
+                LED_MSC_ON();
+            }
+
             if (limit < 10 || limit > 250) {
                 led_tick_step = -led_tick_step;
             }
             limit += led_tick_step;
         } else if (curr == limit) {
-            LED_MSC_OFF();
+            if(led_enable) {
+                LED_MSC_OFF();
+            }
         }
     }
+}
+
+void led_disable() {
+    led_enable = false;
 }
 
 void led_signal() {

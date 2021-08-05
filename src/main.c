@@ -132,6 +132,7 @@ static void check_start_application(void) {
     }
 
     LED_MSC_OFF();
+    led_disable();
 
 #if defined(BOARD_RGBLED_CLOCK_PIN)
     // This won't work for neopixel, because we're running at 1MHz or thereabouts...
@@ -192,6 +193,48 @@ int main(void) {
     WDT->CTRL.reg = 0;
     while(WDT->STATUS.bit.SYNCBUSY) {}
 
+    // Brown Out Detection code from:
+    // https://blog.thea.codes/sam-d21-brown-out-detector/
+    
+    /* Disable the brown-out detector during configuration,
+        otherwise it might misbehave and reset the
+        microcontroller. */
+    SYSCTRL->BOD33.bit.ENABLE = 0;
+    while (!SYSCTRL->PCLKSR.bit.B33SRDY) {};
+
+    /* Configure the brown-out detector so that the
+        program can use it to watch the power supply
+        voltage */
+    SYSCTRL->BOD33.reg = (
+    /* This sets the minimum voltage level to 3.0v - 3.2v.
+        See datasheet table 37-21. */
+    SYSCTRL_BOD33_LEVEL(48) |
+    /* Since the program is waiting for the voltage to rise,
+        don't reset the microcontroller if the voltage is too
+        low. */
+    SYSCTRL_BOD33_ACTION_NONE |
+    /* Enable hysteresis to better deal with noisy power
+        supplies and voltage transients. */
+    SYSCTRL_BOD33_HYST);
+    
+    /* Enable the brown-out detector and then wait for
+        the voltage level to settle. */
+    SYSCTRL->BOD33.bit.ENABLE = 1;
+    while (!SYSCTRL->PCLKSR.bit.BOD33RDY) {}
+    
+    /* BOD33DET is set when the voltage is *too low*,
+        so wait for it to be cleared. */
+    while (SYSCTRL->PCLKSR.bit.BOD33DET) {}
+
+    /* Let the brown-out detector automatically reset the microcontroller
+    if the voltage drops too low. */
+    SYSCTRL->BOD33.bit.ENABLE = 0;
+    while (!SYSCTRL->PCLKSR.bit.B33SRDY) {};
+
+    SYSCTRL->BOD33.reg |= SYSCTRL_BOD33_ACTION_RESET;
+
+    SYSCTRL->BOD33.bit.ENABLE = 1;
+
 #elif defined(SAMD51)
     // Disable the watchdog, in case the application set it.
     WDT->CTRLA.reg = 0;
@@ -239,6 +282,8 @@ int main(void) {
     delay(15);
 #endif
     led_init();
+    PCTL_INIT();
+    PCTL_ON();
 
     logmsg("Start");
     assert((uint32_t)&_etext < APP_START_ADDRESS);
